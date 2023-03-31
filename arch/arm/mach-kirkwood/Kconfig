@@ -141,6 +141,11 @@ config TARGET_SBx81LIFXCAT
 	select FEROCEON_88FR131
 	select KW88F6281
 
+config TARGET_N1T1DD1
+	bool "LG N1T1DD1 Board"
+	select FEROCEON_88FR131
+	select KW88F6281
+
 endchoice
 
 config SYS_SOC
@@ -177,5 +182,6 @@ source "board/Seagate/nas220/Kconfig"
 source "board/zyxel/nsa310s/Kconfig"
 source "board/alliedtelesis/SBx81LIFKW/Kconfig"
 source "board/alliedtelesis/SBx81LIFXCAT/Kconfig"
+source "board/lg/n1t1dd1/Kconfig"
 
 endif

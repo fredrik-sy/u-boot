@@ -1,0 +1,12 @@
+if TARGET_N1T1DD1
+
+config SYS_BOARD
+	default "n1t1dd1"
+
+config SYS_VENDOR
+	default "lg"
+
+config SYS_CONFIG_NAME
+	default "n1t1dd1"
+
+endif

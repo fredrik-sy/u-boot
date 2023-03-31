@@ -60,6 +60,7 @@ dtb-$(CONFIG_ARCH_KIRKWOOD) += \
 	kirkwood-is2.dtb \
 	kirkwood-lsxhl.dtb \
 	kirkwood-lschlv2.dtb \
+	kirkwood-n1t1dd1.dtb \
 	kirkwood-net2big.dtb \
 	kirkwood-ns2.dtb \
 	kirkwood-ns2lite.dtb \
