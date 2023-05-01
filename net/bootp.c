@@ -28,6 +28,7 @@
 #ifdef CONFIG_STATUS_LED
 #include <status_led.h>
 #endif
+#include <nas_detector.h>
 
 #define BOOTP_VENDOR_MAGIC	0x63825363	/* RFC1048 Magic Cookie		*/
 
@@ -907,6 +908,12 @@ DhcpHandler(uchar * pkt, unsigned dest, unsigned src, unsigned len)
 			puts ("DHCP client bound to address ");
 			print_IPaddr(NetOurIP);
 			putc ('\n');
+
+			if( nasd_state == NASD_DHCP ) {
+				NetSetTimeout(0, (thand_f *)0);
+				NetState = NETLOOP_SUCCESS;
+				return;
+			}
 
 			/* Obey the 'autoload' setting */
 			if ((s = getenv("autoload")) != NULL) {

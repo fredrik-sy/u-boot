@@ -69,6 +69,10 @@ main(int argc, char *argv[])
 
 			return (EXIT_SUCCESS);
 	}
+	else
+		if (fw_setenv (argc, argv) != 0)
+			return (EXIT_FAILURE);
+
 
 	fprintf (stderr,
 		"Identity crisis - may be called as `" CMD_PRINTENV

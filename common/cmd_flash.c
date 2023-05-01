@@ -45,6 +45,10 @@ int find_dev_and_part(const char *id, struct mtd_device **dev,
 
 extern flash_info_t flash_info[];	/* info for FLASH chips */
 
+#if defined (CONFIG_MARVELL)		
+extern int mv_flash_real_protect_bank(flash_info_t *info, int prot);
+#endif
+
 /*
  * The user interface starts numbering for Flash banks with 1
  * for historical reasons.

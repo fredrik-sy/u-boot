@@ -38,6 +38,8 @@
 #include <ft_build.h>
 #endif
 
+extern unsigned int whoAmI(void);
+
  /*cmd_boot.c*/
  extern int do_reset (cmd_tbl_t *cmdtp, int flag, int argc, char *argv[]);
 
@@ -166,7 +168,7 @@ int do_bootm (cmd_tbl_t *cmdtp, int flag, int argc, char *argv[])
 	}
 
 	SHOW_BOOT_PROGRESS (1);
-	printf ("## Booting image at %08lx ...\n", addr);
+	printf ("## Booting image at %08lx ..., header_size = %08lx, header_addr = %08lx\n", addr, sizeof(image_header_t), &header);
 
 	/* Copy header so we can blank CRC field for re-calculation */
 #ifdef CONFIG_HAS_DATAFLASH
@@ -198,11 +200,20 @@ int do_bootm (cmd_tbl_t *cmdtp, int flag, int argc, char *argv[])
 	data = (ulong)&header;
 	len  = sizeof(image_header_t);
 
+        puts("image_header_t hdr contents\n");
+        printf("hdr->ih_magic = %08lx, hdr->ih_hcrc = %08lx\n", hdr->ih_magic, ntohl(hdr->ih_hcrc));
+        printf("hdr->ih_time = %08lx, hdr->ih_size = %08lx\n", hdr->ih_time, ntohl(hdr->ih_size));
+        printf("hdr->ih_load = %08lx, hdr->ih_ep = %08lx\n", hdr->ih_load, hdr->ih_ep);
+        printf("hdr->ih_dcrc = %08lx\n", ntohl(hdr->ih_dcrc));
+        printf("hdr->ih_os = %02lx, hdr->ih_arch = %02lx\n", hdr->ih_os, hdr->ih_arch);
+        printf("hdr->ih_type = %02lx, hdr->ih_comp = %02lx\n", hdr->ih_type, hdr->ih_comp);
+        printf("hdr->ih_name = %s\n\n", hdr->ih_name);
+
 	checksum = ntohl(hdr->ih_hcrc);
 	hdr->ih_hcrc = 0;
 
 	if (crc32 (0, (uchar *)data, len) != checksum) {
-		puts ("Bad Header Checksum\n");
+		printf ("Bad Header Checksum, checksum = %08lx, crc32 = %08lx\n", checksum, crc32 (0, (uchar *)data, len));
 		SHOW_BOOT_PROGRESS (-2);
 		return 1;
 	}
@@ -225,8 +236,9 @@ int do_bootm (cmd_tbl_t *cmdtp, int flag, int argc, char *argv[])
 
 	if (verify) {
 		puts ("   Verifying Checksum ... ");
-		if (crc32 (0, (uchar *)data, len) != ntohl(hdr->ih_dcrc)) {
-			printf ("Bad Data CRC\n");
+                checksum = crc32 (0, (uchar *)data, len);
+		if (checksum != ntohl(hdr->ih_dcrc)) {
+			printf ("Bad Data CRC, checksum = %08lx, hdr->ih_dcrc = %08lx\n", checksum, ntohl(hdr->ih_dcrc));
 			SHOW_BOOT_PROGRESS (-3);
 			return 1;
 		}
@@ -263,17 +275,17 @@ int do_bootm (cmd_tbl_t *cmdtp, int flag, int argc, char *argv[])
 	SHOW_BOOT_PROGRESS (5);
 
 	switch (hdr->ih_type) {
-	case IH_TYPE_STANDALONE:
+	case IH_TYPE_STANDALONE: // 1
 		name = "Standalone Application";
 		/* A second argument overwrites the load address */
 		if (argc > 2) {
 			hdr->ih_load = htonl(simple_strtoul(argv[2], NULL, 16));
 		}
 		break;
-	case IH_TYPE_KERNEL:
+	case IH_TYPE_KERNEL: // 2
 		name = "Kernel Image";
 		break;
-	case IH_TYPE_MULTI:
+	case IH_TYPE_MULTI: // 4
 		name = "Multi-File Image";
 		len  = ntohl(len_ptr[0]);
 		/* OS kernel is always the first image */
@@ -307,7 +319,7 @@ int do_bootm (cmd_tbl_t *cmdtp, int flag, int argc, char *argv[])
 #endif
 
 	switch (hdr->ih_comp) {
-	case IH_COMP_NONE:
+	case IH_COMP_NONE: // 0
 		if(ntohl(hdr->ih_load) == addr) {
 			printf ("   XIP %s ... ", name);
 		} else {
@@ -327,11 +339,12 @@ int do_bootm (cmd_tbl_t *cmdtp, int flag, int argc, char *argv[])
 				l -= tail;
 			}
 #else	/* !(CONFIG_HW_WATCHDOG || CONFIG_WATCHDOG) */
+			//puts("hdr->ih_comp = 0, IH_COMP_NONE\n");
 			memmove ((void *) ntohl(hdr->ih_load), (uchar *)data, len);
 #endif	/* CONFIG_HW_WATCHDOG || CONFIG_WATCHDOG */
 		}
 		break;
-	case IH_COMP_GZIP:
+	case IH_COMP_GZIP: // 1
 		printf ("   Uncompressing %s ... ", name);
 		if (gunzip ((void *)ntohl(hdr->ih_load), unc_len,
 			    (uchar *)data, &len) != 0) {
@@ -341,7 +354,7 @@ int do_bootm (cmd_tbl_t *cmdtp, int flag, int argc, char *argv[])
 		}
 		break;
 #ifdef CONFIG_BZIP2
-	case IH_COMP_BZIP2:
+	case IH_COMP_BZIP2: // 2
 		printf ("   Uncompressing %s ... ", name);
 		/*
 		 * If we've got less than 4 MB of malloc() space,
@@ -388,6 +401,7 @@ int do_bootm (cmd_tbl_t *cmdtp, int flag, int argc, char *argv[])
 		return 0;
 	case IH_TYPE_KERNEL:
 	case IH_TYPE_MULTI:
+		//puts ("IH_TYPE_KERNEL, IH_TYPE_MULTI\n");
 		/* handled below */
 		break;
 	default:
@@ -401,10 +415,11 @@ int do_bootm (cmd_tbl_t *cmdtp, int flag, int argc, char *argv[])
 
 	switch (hdr->ih_os) {
 	default:			/* handled by (original) Linux case */
-	case IH_OS_LINUX:
+	case IH_OS_LINUX: // 5
 #ifdef CONFIG_SILENT_CONSOLE
 	    fixup_silent_linux();
 #endif
+            //puts("hdr->ih_os = 5, IH_OS_LINUX\n");
 	    do_bootm_linux  (cmdtp, flag, argc, argv,
 			     addr, len_ptr, verify);
 	    break;
@@ -578,6 +593,7 @@ do_bootm_linux (cmd_tbl_t *cmdtp, int flag,
 	*kbd = *(gd->bd);
 
 #ifdef	DEBUG
+	printf ("## cmdline is %s\n", cmdline);
 	printf ("## cmdline at 0x%08lX ... 0x%08lX\n", cmd_start, cmd_end);
 
 	do_bdinfo (NULL, 0, 0, NULL);
@@ -616,7 +632,7 @@ do_bootm_linux (cmd_tbl_t *cmdtp, int flag,
 
 		addr = simple_strtoul(argv[2], NULL, 16);
 
-		printf ("## Loading RAMDisk Image at %08lx ...\n", addr);
+		printf ("## Loading RAMDisk Image at %08lx, header_addr = %08lx, header_size = %08lx ...\n", addr, &header, sizeof(image_header_t));
 
 		/* Copy header so we can blank CRC field for re-calculation */
 		memmove (&header, (char *)addr, sizeof(image_header_t));
@@ -630,11 +646,22 @@ do_bootm_linux (cmd_tbl_t *cmdtp, int flag,
 		data = (ulong)&header;
 		len  = sizeof(image_header_t);
 
+/////////////////////
+        puts("image_header_t hdr contents\n");
+        printf("hdr->ih_magic = %08lx, hdr->ih_hcrc = %08lx\n", hdr->ih_magic, hdr->ih_hcrc);
+        printf("hdr->ih_time = %08lx, hdr->ih_size = %08lx\n", hdr->ih_time, hdr->ih_size);
+        printf("hdr->ih_load = %08lx, hdr->ih_ep = %08lx\n", hdr->ih_load, hdr->ih_ep);
+        printf("hdr->ih_dcrc = %08lx\n", hdr->ih_dcrc);
+        printf("hdr->ih_os = %02lx, hdr->ih_arch = %02lx\n", hdr->ih_os, hdr->ih_arch);
+        printf("hdr->ih_type = %02lx, hdr->ih_comp = %02lx\n", hdr->ih_type, hdr->ih_comp);
+        printf("hdr->ih_name = %s\n\n", hdr->ih_name);
+/////////////////////
+
 		checksum = hdr->ih_hcrc;
 		hdr->ih_hcrc = 0;
 
 		if (crc32 (0, (uchar *)data, len) != checksum) {
-			puts ("Bad Header Checksum\n");
+			printf ("Bad Header Checksum, checksum = %08lx, crc32 = %08lx\n", checksum, crc32 (0, (uchar *)data, len));
 			SHOW_BOOT_PROGRESS (-11);
 			do_reset (cmdtp, flag, argc, argv);
 		}
@@ -671,9 +698,10 @@ do_bootm_linux (cmd_tbl_t *cmdtp, int flag,
 #endif	/* CONFIG_HW_WATCHDOG || CONFIG_WATCHDOG */
 
 			if (csum != hdr->ih_dcrc) {
-				puts ("Bad Data CRC\n");
+				printf ("Bad Data CRC, checksum = %08lx, hdr->ih_dcrc = %08lx\n", checksum, ntohl(hdr->ih_dcrc));
 				SHOW_BOOT_PROGRESS (-12);
-				do_reset (cmdtp, flag, argc, argv);
+				return 1;
+				//do_reset (cmdtp, flag, argc, argv);
 			}
 			puts ("OK\n");
 		}
@@ -839,6 +867,16 @@ do_bootm_linux (cmd_tbl_t *cmdtp, int flag,
 }
 #endif /* CONFIG_PPC */
 
+#ifdef CONFIG_MARVELL
+char extraBootArgs[200];
+
+/* NetBSD Stage-2 Loader Parameters:
+*   r6: boot args string
+*/
+#define DECLARE_NETBSD_CMDLINE
+register volatile char *cmdline asm ("r6");
+#endif
+
 static void
 do_bootm_netbsd (cmd_tbl_t *cmdtp, int flag,
 		int	argc, char *argv[],
@@ -847,14 +885,19 @@ do_bootm_netbsd (cmd_tbl_t *cmdtp, int flag,
 		int	verify)
 {
 	DECLARE_GLOBAL_DATA_PTR;
+#ifdef CONFIG_MARVELL
+	DECLARE_NETBSD_CMDLINE;
+#else
+	char *cmdline;
+#endif
+	bd_t *bd = gd->bd;
+
 
 	image_header_t *hdr = &header;
 
 	void	(*loader)(bd_t *, image_header_t *, char *, char *);
 	image_header_t *img_addr;
 	char     *consdev;
-	char     *cmdline;
-
 
 	/*
 	 * Booting a (NetBSD) kernel image
@@ -887,9 +930,27 @@ do_bootm_netbsd (cmd_tbl_t *cmdtp, int flag,
 	if (argc > 2) {
 		ulong len;
 		int   i;
+#ifdef CONFIG_MARVELL
+		unsigned int mvBoardIdGet(void);
+		char buf[30];
+		sprintf(extraBootArgs ,"boardId=%x",mvBoardIdGet()); 
+
+		for (i = 0; i < 4; i++) 
+		{
+			sprintf(buf ," dram%d_start=%x",i, bd->bi_dram[i].start);
+			strcat(extraBootArgs, buf); 
+			sprintf(buf ," dram%d_size=%x",i, bd->bi_dram[i].size);
+			strcat(extraBootArgs, buf); 
+		}
+
+#endif
 
 		for (i=2, len=0 ; i<argc ; i+=1)
 			len += strlen (argv[i]) + 1;
+#ifdef CONFIG_MARVELL
+		/* Adding BoardId */
+		len += strlen(extraBootArgs) + 1;
+#endif
 		cmdline = malloc (len);
 
 		for (i=2, len=0 ; i<argc ; i+=1) {
@@ -898,11 +959,19 @@ do_bootm_netbsd (cmd_tbl_t *cmdtp, int flag,
 			strcpy (&cmdline[len], argv[i]);
 			len += strlen (argv[i]);
 		}
+#ifdef CONFIG_MARVELL
+		/* Adding BoardId */
+		if (i > 2) cmdline[len++] = ' ';
+		strcpy (&cmdline[len], extraBootArgs);
+		len += strlen (extraBootArgs);
+#endif
+		
+
 	} else if ((cmdline = getenv("bootargs")) == NULL) {
 		cmdline = "";
 	}
 
-	loader = (void (*)(bd_t *, image_header_t *, char *, char *)) hdr->ih_ep;
+	loader = (void (*)(bd_t *, image_header_t *, char *, char *))ntohl(hdr->ih_ep);
 
 	printf ("## Transferring control to NetBSD stage-2 loader (at address %08lx) ...\n",
 		(ulong)loader);
@@ -1017,7 +1086,16 @@ int do_bootd (cmd_tbl_t *cmdtp, int flag, int argc, char *argv[])
 {
 	int rcode = 0;
 #ifndef CFG_HUSH_PARSER
-	if (run_command (getenv ("bootcmd"), flag) < 0) rcode = 1;
+#if defined(CONFIG_MARVELL) && defined(CONFIG_MV78200)
+	if (whoAmI() == 1)
+	{
+		if (run_command (getenv ("bootcmd2"), flag) < 0) rcode = 1;
+	}
+	else
+#endif
+	{
+		if (run_command (getenv ("bootcmd"), flag) < 0) rcode = 1;
+	}
 #else
 	if (parse_string_outer(getenv("bootcmd"),
 		FLAG_PARSE_SEMICOLON | FLAG_EXIT_FROM_LOOP) != 0 ) rcode = 1;

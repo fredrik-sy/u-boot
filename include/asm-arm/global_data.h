@@ -45,6 +45,10 @@ typedef	struct	global_data {
 #ifdef CONFIG_VFD
 	unsigned char	vfd_type;	/* display type */
 #endif
+#ifdef CONFIG_MARVELL
+	unsigned long  bus_clk;
+        unsigned int tclk;
+#endif
 #if 0
 	unsigned long	cpu_clk;	/* CPU clock in Hz!		*/
 	unsigned long	bus_clk;
@@ -52,6 +56,11 @@ typedef	struct	global_data {
 	unsigned long	reset_status;	/* reset status register at boot */
 #endif
 	void		**jt;		/* jump table */
+#ifdef CONFIG_MARVELL
+	unsigned long	ram_size;	/* RAM size */
+	unsigned int ddr_clk;
+#endif
+
 } gd_t;
 
 /*

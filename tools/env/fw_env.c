@@ -31,6 +31,10 @@
 #include <sys/ioctl.h>
 #include <sys/stat.h>
 #include <unistd.h>
+typedef         unsigned char           uint8_t;
+typedef         unsigned short          uint16_t;
+typedef         unsigned int            uint32_t;
+
 #include <linux/mtd/mtd.h>
 #include "fw_env.h"
 
@@ -44,6 +48,7 @@ typedef struct envdev_s {
 	ulong devoff;			/* Device offset */
 	ulong env_size;			/* environment size */
 	ulong erase_size;		/* device erase size */
+	ulong is_block_dev;
 } envdev_t;
 
 static envdev_t envdevices[2];
@@ -53,6 +58,7 @@ static int curdev;
 #define DEVOFFSET(i)  envdevices[(i)].devoff
 #define ENVSIZE(i)    envdevices[(i)].env_size
 #define DEVESIZE(i)   envdevices[(i)].erase_size
+#define BLOCKDEV(i)   envdevices[(i)].is_block_dev
 
 #define CFG_ENV_SIZE ENVSIZE(curdev)
 
@@ -317,7 +323,7 @@ int fw_setenv (int argc, char *argv[])
 		if ((strcmp (name, "ethaddr") == 0) ||
 			(strcmp (name, "serial#") == 0)) {
 			fprintf (stderr, "Can't overwrite \"%s\"\n", name);
-			return (EROFS);
+			//return (EROFS);
 		}
 
 		if (*++nxt == '\0') {
@@ -373,7 +379,12 @@ int fw_setenv (int argc, char *argv[])
   WRITE_FLASH:
 
 	/* Update CRC */
-	environment.crc = crc32 (0, environment.data, ENV_SIZE);
+	{
+		unsigned int crc = environment.crc;
+		environment.crc = crc32 (0, environment.data, ENV_SIZE);
+
+		printf("old CRC: %x new CRC: %x \n", crc, (unsigned int) environment.crc);
+	} 
 
 	/* write environment back to flash */
 	if (flash_io (O_RDWR)) {
@@ -387,7 +398,8 @@ int fw_setenv (int argc, char *argv[])
 static int flash_io (int mode)
 {
 	int fd, fdr, rc, otherdev, len, resid;
-	erase_info_t erase;
+	//erase_info_t erase;
+	struct mtd_erase_region_info erase;
 	char *data = NULL;
 
 	if ((fd = open (DEVNAME (curdev), mode)) < 0) {
@@ -418,13 +430,14 @@ static int flash_io (int mode)
 			fdr = fd;
 		}
 		printf ("Unlocking flash...\n");
-		erase.length = DEVESIZE (otherdev);
-		erase.start = DEVOFFSET (otherdev);
+		erase.erasesize = DEVESIZE (otherdev);
+		erase.offset = DEVOFFSET (otherdev);
 		ioctl (fdr, MEMUNLOCK, &erase);
+		rc = ioctl (fdr, MEMUNLOCK, &erase);
 
 		if (HaveRedundEnv) {
-			erase.length = DEVESIZE (curdev);
-			erase.start = DEVOFFSET (curdev);
+			erase.erasesize = DEVESIZE (curdev);
+			erase.offset = DEVOFFSET (curdev);
 			ioctl (fd, MEMUNLOCK, &erase);
 			environment.flags = active_flag;
 		}
@@ -448,7 +461,8 @@ static int flash_io (int mode)
 			}
 			if ((rc = read (fdr, data, resid)) != resid) {
 				fprintf (stderr,
-					"read error on %s: %s\n",
+					"read error on (ret=%d) %s: %s\n",
+					rc,
 					DEVNAME (otherdev),
 					strerror (errno));
 				return (-1);
@@ -457,8 +471,9 @@ static int flash_io (int mode)
 
 		printf ("Erasing old environment...\n");
 
-		erase.length = DEVESIZE (otherdev);
-		erase.start = DEVOFFSET (otherdev);
+		erase.erasesize = DEVESIZE (otherdev);
+		erase.offset = DEVOFFSET (otherdev);
+		printf("erase.offset:%x, len:%d\n", erase.offset, erase.erasesize);
 		if (ioctl (fdr, MEMERASE, &erase) != 0) {
 			fprintf (stderr, "MTD erase error on %s: %s\n",
 				DEVNAME (otherdev),
@@ -475,18 +490,37 @@ static int flash_io (int mode)
 				DEVNAME (otherdev), strerror (errno));
 			return (-1);
 		}
-		if (write (fdr, &environment, len) != len) {
-			fprintf (stderr,
-				"CRC write error on %s: %s\n",
-				DEVNAME (otherdev), strerror (errno));
-			return (-1);
-		}
-		if (write (fdr, environment.data, ENV_SIZE) != ENV_SIZE) {
-			fprintf (stderr,
-				"Write error on %s: %s\n",
-				DEVNAME (otherdev), strerror (errno));
-			return (-1);
-		}
+		if( BLOCKDEV (otherdev) ) {
+			if (write (fdr, &environment, len) != len) {
+				fprintf (stderr,
+					"CRC write error on %s: %s\n",
+					DEVNAME (otherdev), strerror (errno));
+				return (-1);
+			}
+			if (write (fdr, environment.data, ENV_SIZE) != ENV_SIZE) {
+				fprintf (stderr,
+					"Write error on %s: %s\n",
+					DEVNAME (otherdev), strerror (errno));
+				return (-1);
+			}
+		} 
+		else {
+			char * buf;
+                        buf = malloc( ENV_SIZE +len );
+                        if( buf ) {
+                                memcpy(buf, &environment, len);
+                                memcpy(buf+len, environment.data, ENV_SIZE);
+
+                                rc = write (fdr, buf, ENV_SIZE+len);
+                                if (rc == ENV_SIZE+len)
+                                        printf("Write success! : ret=%d\n", rc);
+                                else
+                                        printf("Write fail! : len=%ld, ret=%d\n", ENV_SIZE+len, rc);
+
+                                free( buf);
+                        }
+                }
+
 		if (resid) {
 			if (write (fdr, data, resid) != resid) {
 				fprintf (stderr,
@@ -514,12 +548,12 @@ static int flash_io (int mode)
 		}
 		printf ("Done\n");
 		printf ("Locking ...\n");
-		erase.length = DEVESIZE (otherdev);
-		erase.start = DEVOFFSET (otherdev);
+		erase.erasesize = DEVESIZE (otherdev);
+		erase.offset = DEVOFFSET (otherdev);
 		ioctl (fdr, MEMLOCK, &erase);
 		if (HaveRedundEnv) {
-			erase.length = DEVESIZE (curdev);
-			erase.start = DEVOFFSET (curdev);
+			erase.erasesize = DEVESIZE (curdev);
+			erase.offset = DEVOFFSET (curdev);
 			ioctl (fd, MEMLOCK, &erase);
 			if (close (fdr)) {
 				fprintf (stderr,
@@ -531,6 +565,7 @@ static int flash_io (int mode)
 		}
 		printf ("Done\n");
 	} else {
+		int ret;
 
 		if (lseek (fd, DEVOFFSET (curdev), SEEK_SET) == -1) {
 			fprintf (stderr,
@@ -538,10 +573,10 @@ static int flash_io (int mode)
 				DEVNAME (curdev), strerror (errno));
 			return (-1);
 		}
-		if (read (fd, &environment, len) != len) {
+		if ((ret = read (fd, &environment, len)) != len) {
 			fprintf (stderr,
-				"CRC read error on %s: %s\n",
-				DEVNAME (curdev), strerror (errno));
+				"CRC read error on %s: %s(ret: %d, len:%d)\n",
+				DEVNAME (curdev), strerror (errno), ret, len);
 			return (-1);
 		}
 		if ((rc = read (fd, environment.data, ENV_SIZE)) != ENV_SIZE) {
@@ -613,7 +648,9 @@ static int env_init (void)
 	if (!HaveRedundEnv) {
 		if (!crc1_ok) {
 			fprintf (stderr,
-				"Warning: Bad CRC, using default environment\n");
+				"Warning: Bad CRC, using default environment," \
+				"crc1 = %x, env.crc = %x, ENV_SIZE = %x\n", 
+				crc1, environment.crc, ENV_SIZE);
 			environment.data = default_environment;
 			free (addr1);
 		}
@@ -651,7 +688,9 @@ static int env_init (void)
 			free (addr1);
 		} else if (!crc1_ok && !crc2_ok) {
 			fprintf (stderr,
-				"Warning: Bad CRC, using default environment\n");
+				"Warning: Bad CRC, using default environment, \
+				crc2 = %x, env.crc = %x, ENV_SIZE = %x\n",
+				crc2, environment.crc, ENV_SIZE);
 			environment.data = default_environment;
 			curdev = 0;
 			free (addr2);
@@ -695,6 +734,7 @@ static int env_init (void)
 static int parse_config ()
 {
 	struct stat st;
+	char *mtd_block = "/dev/mtdblock";
 
 #if defined(CONFIG_FILE)
 	/* Fills in DEVNAME(), ENVSIZE(), DEVESIZE(). Or don't. */
@@ -729,6 +769,20 @@ static int parse_config ()
 			DEVNAME (1), strerror (errno));
 		return 1;
 	}
+
+	BLOCKDEV(0) = 0;
+        if( !memcmp(DEVNAME(0), mtd_block, strlen(mtd_block)) ) {
+                printf("MTD Device 0(%s) is  block device!\n", DEVNAME(0));
+                BLOCKDEV(0) = 1;
+        }
+#ifdef HAVE_REDUND
+        BLOCKDEV(1) = 0;
+        if( !memcmp(DEVNAME(1), mtd_block, strlen(mtd_block)) ) {
+                printf("MTD Device 1(%s) is  block device!\n", DEVNAME(1));
+                BLOCKDEV(1) = 1;
+        }
+#endif
+
 	return 0;
 }
 

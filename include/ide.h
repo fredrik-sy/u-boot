@@ -40,8 +40,16 @@
 
 #ifdef CFG_64BIT_LBA
 typedef uint64_t lbaint_t;
+#define IDE_BLOCK_NUMBER_MASK 0x0000fffff0000000
+#define LBA_LOW_REG_SHIFT	24
+#define LBA_MID_REG_SHIFT	32
+#define LBA_HIGH_REG_SHIFT	40
 #else
 typedef ulong lbaint_t;
+#define IDE_BLOCK_NUMBER_MASK 0xf0000000
+#define LBA_LOW_REG_SHIFT	24
+#define LBA_MID_REG_SHIFT	0
+#define LBA_HIGH_REG_SHIFT	0
 #endif
 
 /*
@@ -51,5 +59,6 @@ typedef ulong lbaint_t;
 void  ide_init  (void);
 ulong ide_read	(int device, lbaint_t blknr, ulong blkcnt, ulong *buffer);
 ulong ide_write (int device, lbaint_t blknr, ulong blkcnt, ulong *buffer);
-
+void  ide_load  (ulong addr, ulong length, ulong target);     // jcho ODD-boot
+int   ide_disc_ready (ulong addr, ulong length);        // jcho ODD-boot
 #endif /* _IDE_H */

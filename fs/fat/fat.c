@@ -69,6 +69,7 @@ int
 fat_register_device(block_dev_desc_t *dev_desc, int part_no)
 {
 	unsigned char buffer[SECTOR_SIZE];
+	disk_partition_t info;
 
 	if (!dev_desc->block_read)
 		return -1;
@@ -83,24 +84,32 @@ fat_register_device(block_dev_desc_t *dev_desc, int part_no)
 		/* no signature found */
 		return -1;
 	}
-	if(!strncmp((char *)&buffer[DOS_FS_TYPE_OFFSET],"FAT",3)) {
+#if (defined(CONFIG_CMD_IDE) || \
+     defined(CONFIG_CMD_SCSI) || \
+     defined(CONFIG_CMD_USB) || \
+     defined(CONFIG_MMC) || \
+     defined(CONFIG_SYSTEMACE) )
+	/* First we assume, there is a MBR */
+	if (!get_partition_info (dev_desc, part_no, &info)) {
+		part_offset = info.start;
+		cur_part = part_no;
+	} else if (!strncmp((char *)&buffer[DOS_FS_TYPE_OFFSET], "FAT", 3)) {
 		/* ok, we assume we are on a PBR only */
 		cur_part = 1;
-		part_offset=0;
+		part_offset = 0;
+	} else {
+		printf ("** Partition %d not valid on device %d **\n",
+				part_no, dev_desc->dev);
+		return -1;
 	}
-	else {
-#if (CONFIG_COMMANDS & CFG_CMD_IDE) || (CONFIG_COMMANDS & CFG_CMD_SCSI) || \
-    (CONFIG_COMMANDS & CFG_CMD_USB) || defined(CONFIG_SYSTEMACE)
-		disk_partition_t info;
-		if(!get_partition_info(dev_desc, part_no, &info)) {
-			part_offset = info.start;
-			cur_part = part_no;
-		}
-		else {
-			printf ("** Partition %d not valid on device %d **\n",part_no,dev_desc->dev);
-			return -1;
-		}
+
 #else
+	if (!strncmp((char *)&buffer[DOS_FS_TYPE_OFFSET],"FAT",3)) {
+		/* ok, we assume we are on a PBR only */
+		cur_part = 1;
+		part_offset = 0;
+		info.start = part_offset;
+	} else {
 		/* FIXME we need to determine the start block of the
 		 * partition where the DOS FS resides. This can be done
 		 * by using the get_partition_info routine. For this
@@ -108,8 +117,8 @@ fat_register_device(block_dev_desc_t *dev_desc, int part_no)
 		 */
 		part_offset=32;
 		cur_part = 1;
-#endif
 	}
+#endif
 	return 0;
 }
 
@@ -176,7 +185,7 @@ static void get_name (dir_entry *dirent, char *s_name)
 	if (*s_name == DELETED_FLAG)
 		*s_name = '\0';
 	else if (*s_name == aRING)
-		*s_name = 'å';
+		*s_name = 'ï¿½';
 	downcase (s_name);
 }
 
@@ -481,7 +490,7 @@ get_vfatname(fsdata *mydata, int curclust, __u8 *cluster,
 
 	l_name[idx] = '\0';
 	if (*l_name == DELETED_FLAG) *l_name = '\0';
-	else if (*l_name == aRING) *l_name = 'å';
+	else if (*l_name == aRING) *l_name = 'ï¿½';
 	downcase(l_name);
 
 	/* Return the real directory entry */
@@ -972,7 +981,7 @@ file_fat_detectfs(void)
 		return 1;
 	}
 #if (CONFIG_COMMANDS & CFG_CMD_IDE) || (CONFIG_COMMANDS & CFG_CMD_SCSI) || \
-    (CONFIG_COMMANDS & CFG_CMD_USB) || (CONFIG_MMC)
+    (CONFIG_COMMANDS & CFG_CMD_USB) || (CONFIG_COMMANDS & CFG_CMD_MMC)
 	printf("Interface:  ");
 	switch(cur_dev->if_type) {
 		case IF_TYPE_IDE :	printf("IDE"); break;

@@ -25,20 +25,22 @@ SOURCES := crc32.c  fw_env.c  fw_env_main.c
 HEADERS := fw_env.h
 
 all:	fw_printenv
+	cp fw_printenv fw_setenv
 
 fw_printenv:	$(SOURCES) $(HEADERS)
-	$(CROSS_COMPILE)gcc -Wall -DUSE_HOSTCC $(SOURCES) -o fw_printenv
+	$(CROSS_COMPILE)gcc -I$(TOPDIR)/include -Wall -DUSE_HOSTCC $(SOURCES) -o fw_printenv
 
 clean:
-	rm -f fw_printenv crc32.c
+	rm -f fw_printenv crc32.c zlib.h
 
 crc32.c:
 	ln -s ../../lib_generic/crc32.c crc32.c
+	ln -sf ../../include/zlib.h zlib.h
 
 #########################################################################
 
 .depend:	Makefile $(SOURCES)
-		$(CC) -M $(HOST_CFLAGS) $(CPPFLAGS) -DUSE_HOSTCC $(SOURCES) > $@
+		$(CC) -M $(HOST_CFLAGS) $(CPPFLAGS) -I$(TOPDIR)/include -DUSE_HOSTCC $(SOURCES) > $@
 
 sinclude .depend
 
